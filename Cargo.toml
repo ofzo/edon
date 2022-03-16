@@ -1,0 +1,17 @@
+[package]
+authors = ["roadup <roadup.cc@gmail.com>"]
+edition = "2021"
+name = "edon"
+version = "0.1.0"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+swc = "*"
+swc_common = {version = "*", features = ["tty-emitter"]}
+swc_ecma_parser = "*"
+v8 = "*"
+
+[dependencies.tokio]
+features = ["full"]
+version = "1"
