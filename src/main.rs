@@ -1,20 +1,24 @@
-use std::time::Duration;
-// use swc;
-use tokio::time::sleep;
+use std::env;
+mod compile;
+mod graph;
+mod runner;
+mod runtime;
 
-use crate::swc::swc_main;
-
-mod executor;
-mod swc;
+use graph::DependencyGraph;
+use runtime::Runtime;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let source = tokio::fs::read("output/test.js").await?;
-    let code = swc_main(&String::from_utf8_lossy(&source).to_string());
+async fn main() -> anyhow::Result<()> {
+    let args: Vec<String> = env::args().collect();
+    if args.len() <= 1 {
+        panic!("no args");
+    }
 
-    tokio::spawn(sleep(Duration::from_micros(1)));
+    let current_dir = env::current_dir()?;
+    let entry = &args[1];
 
-    executor::run(code);
-
-    Ok(())
+    println!("");
+    Runtime::from(DependencyGraph::from(entry, &current_dir.to_string_lossy().to_string()).await?)
+        .run(entry)
+        .await
 }

@@ -7,38 +7,21 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'rust-js'",
+            "name": "Debug executable 'edon'",
             "cargo": {
                 "args": [
                     "build",
-                    "--bin=rust-js",
-                    "--package=rust-js"
+                    "--bin=edon",
+                    "--package=edon"
                 ],
                 "filter": {
-                    "name": "rust-js",
+                    "name": "edon",
                     "kind": "bin"
                 }
             },
-            "args": [],
-            "cwd": "${workspaceFolder}"
-        },
-        {
-            "type": "lldb",
-            "request": "launch",
-            "name": "Debug unit tests in executable 'rust-js'",
-            "cargo": {
-                "args": [
-                    "test",
-                    "--no-run",
-                    "--bin=rust-js",
-                    "--package=rust-js"
-                ],
-                "filter": {
-                    "name": "rust-js",
-                    "kind": "bin"
-                }
-            },
-            "args": [],
+            "args": [
+                "output/test.ts"
+            ],
             "cwd": "${workspaceFolder}"
         }
     ]

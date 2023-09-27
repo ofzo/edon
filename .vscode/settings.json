@@ -1,0 +1,18 @@
+{
+    "cSpell.words": [
+        "canonicalize",
+        "Edon",
+        "microtask",
+        "oneshot",
+        "reqwest"
+    ],
+    "files.associations": {
+        "*.cjson": "jsonc",
+        "*.wxs": "javascript",
+        "*.wxss": "css",
+        "*.wxml": "wxml",
+        "*.html": "html",
+        "*.wasm": "wasm",
+        "stdio.h": "c"
+    },
+}
