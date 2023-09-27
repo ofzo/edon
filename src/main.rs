@@ -4,6 +4,7 @@ mod graph;
 mod runner;
 mod runtime;
 
+use graph::resolve;
 use graph::DependencyGraph;
 use runtime::Runtime;
 
@@ -14,11 +15,11 @@ async fn main() -> anyhow::Result<()> {
         panic!("no args");
     }
 
-    let current_dir = env::current_dir()?;
+    let current_dir = env::current_dir()?.to_string_lossy().to_string();
     let entry = &args[1];
 
     println!("");
-    Runtime::from(DependencyGraph::from(entry, &current_dir.to_string_lossy().to_string()).await?)
-        .run(entry)
+    Runtime::from(DependencyGraph::from(entry, &current_dir).await?)
+        .run(&resolve(entry, &current_dir))
         .await
 }

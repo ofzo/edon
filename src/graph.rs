@@ -8,6 +8,7 @@ use relative_path::RelativePath;
 use reqwest::{self};
 use std::{
     collections::HashMap,
+    fs,
     io::{Error, ErrorKind},
 };
 use url::Url;
@@ -22,9 +23,17 @@ pub fn resolve(filename: &str, base: &String) -> String {
         let url = url.join(&filename).unwrap();
         return url.to_string();
     }
+    if filename.starts_with("/") {
+        return filename.to_string();
+    }
     let relative_path = RelativePath::new(filename);
-    let full_path = relative_path.to_logical_path(&base);
-    return full_path.to_string_lossy().to_string();
+    let base = RelativePath::new(base);
+    let full_path = if fs::metadata(base.to_string()).unwrap().is_file() {
+        base.parent().unwrap().join_normalized(relative_path)
+    } else {
+        base.join_normalized(relative_path)
+    };
+    format!("/{full_path}")
 }
 
 pub async fn load(filename: &String) -> anyhow::Result<ModuleDependency> {

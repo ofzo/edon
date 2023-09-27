@@ -238,7 +238,11 @@ pub fn compile(file_name: &str, source: &str) -> ModuleDependency {
                                 syntax: Some(Syntax::Typescript(Default::default())),
                                 ..Default::default()
                             },
-                            module: Some(ModuleConfig::Es6),
+                            module: Some(ModuleConfig::Es6(
+                                swc_ecma_transforms_module::EsModuleConfig {
+                                    resolve_fully: true,
+                                },
+                            )),
                             source_maps: Some(SourceMapsConfig::Bool(false)),
                             ..Default::default()
                         },

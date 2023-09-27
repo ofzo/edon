@@ -69,7 +69,9 @@ impl AsynchronousKind {
 
         let graph = graph_rc.borrow();
         let table = graph.table.borrow();
-        let dep = table.get(specifier).unwrap();
+        let dep = table
+            .get(specifier)
+            .expect(&format!("specifier `{}` not found", specifier));
 
         if dep.initialize(isolate).is_some() {
             dep.evaluate(isolate);
