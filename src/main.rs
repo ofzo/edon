@@ -10,7 +10,7 @@ use runtime::Runtime;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let args: Vec<String> = env::args().collect();
+    let args = env::args().collect::<Vec<_>>();
     if args.len() <= 1 {
         panic!("no args");
     }
@@ -18,7 +18,7 @@ async fn main() -> anyhow::Result<()> {
     let current_dir = env::current_dir()?.to_string_lossy().to_string();
     let entry = &args[1];
 
-    println!("");
+    // println!("");
     Runtime::from(DependencyGraph::from(entry, &current_dir).await?)
         .run(&resolve(entry, &current_dir))
         .await

@@ -36,6 +36,9 @@ pub struct RuntimeState {
     pub sender: Sender<usize>,
     pub receiver: Receiver<usize>,
 }
+/**
+# Ts Runtime
+*/
 pub struct Runtime {
     pub isolate: v8::OwnedIsolate,
     pub sender: Sender<usize>,

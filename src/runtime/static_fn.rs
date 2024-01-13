@@ -1,13 +1,12 @@
-use std::{task::Poll, time::Duration};
-
 use super::{asynchronous::AsynchronousKind, Runtime};
 use crate::{graph::resolve, runner::console::console_format};
+use std::{task::Poll, time::Duration};
 use url::Url;
 
 impl Runtime {
     pub fn resolve<'s>(
         context: v8::Local<'s, v8::Context>,
-        specifier: v8::Local<'s, v8::String>,
+        source: v8::Local<'s, v8::String>,
         _import_assertions: v8::Local<'s, v8::FixedArray>,
         referrer: v8::Local<'s, v8::Module>,
     ) -> Option<v8::Local<'s, v8::Module>> {
@@ -16,18 +15,26 @@ impl Runtime {
         let graph_rc = Self::graph(scope);
 
         let state = graph_rc.borrow();
-        let module_id = referrer.get_identity_hash();
 
-        let hash = state.hash.borrow();
-        let url = hash.get(&module_id).unwrap();
+        let source = source.to_rust_string_lossy(scope);
 
-        let specifier = specifier.to_rust_string_lossy(scope);
-        let url = Url::parse(url).unwrap();
-        let url = url.join(&specifier).unwrap();
-        let url = url.as_str().to_string();
+        let url = if source.starts_with("http") {
+            let url = Url::parse(&source).expect(format!("parse url failed: {}", source).as_str());
+            let url = url.join(&source).unwrap();
+            let url = url.as_str().to_string();
+            url
+        } else {
+            let module_id = referrer.get_identity_hash();
+
+            let hash = state.hash.borrow();
+            let url = hash.get(&module_id).unwrap();
+            url.clone()
+        };
 
         let module = state.module.borrow();
-        let info = module.get(&url).unwrap();
+        let info = module
+            .get(&url)
+            .expect(format!("get module failure: {}", url).as_str());
         let module = v8::Local::new(scope, &info.module);
 
         return Some(module);

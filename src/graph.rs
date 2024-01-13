@@ -1,16 +1,11 @@
 use crate::compile::{compile, ModuleDependency};
-use anyhow::anyhow;
 use chrono::Local;
 use colored::Colorize;
 use queues::*;
 use regex::Regex;
 use relative_path::RelativePath;
 use reqwest::{self};
-use std::{
-    collections::HashMap,
-    fs,
-    io::{Error, ErrorKind},
-};
+use std::{collections::HashMap, fs};
 use url::Url;
 
 pub fn resolve(filename: &str, base: &String) -> String {

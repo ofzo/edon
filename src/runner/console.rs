@@ -56,13 +56,13 @@ pub fn console_format(
             name
         };
         let tag = if v.is_async_function() {
-            "AsyncFunction"
+            "async function"
         } else if v.is_generator_function() {
-            "GeneratorFunction"
+            "function*"
         } else {
-            "Function"
+            "function"
         };
-        return format!("{}", format!("[ {tag} <{name}> ]").yellow());
+        return format!("{}", format!(" {tag} {name}() ").italic().yellow());
     }
     if v.is_promise() {
         let promise = v8::Local::<v8::Promise>::try_from(*v).unwrap();
@@ -96,12 +96,15 @@ pub fn console_format(
                 )
             })
             .collect::<Vec<_>>();
-        fmt.push(format!(
-            "{}{}: {{}}",
-            "  ".repeat(level + 1).to_string(),
-            "[[prototype]]".color("gray"),
-            // console_format(scope, &prototype, level + 1)
-        ));
+        // fmt.push(format!(
+        //     "{}{}: {{}}",
+        //     "  ".repeat(level + 1).to_string(),
+        //     "[[prototype]]".color("gray"),
+        //     // console_format(scope, &prototype, level + 1)
+        // ));
+        if fmt.len() == 0 {
+            return format!("{{}}");
+        }
         return format!(
             "{{\n{}\n{}}}",
             fmt.join(",\n"),
@@ -125,5 +128,8 @@ pub fn console_log(
         .collect::<Vec<_>>()
         .join(" ");
 
-    println!("{result}");
+    println!(
+        "{} {result}",
+        format!("{}", Utc::now().format("%Y-%m-%d %H:%M:%S%.3f")).color("gray")
+    );
 }

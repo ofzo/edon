@@ -1,30 +1,29 @@
-declare var globalThis;
-
 interface RuntimeData {
-    asyncHandle: Record<number, (() => void)>,
-    count: number
+  asyncHandle: Record<number, () => void>
+  count: number
 }
 
 var runtimeData: RuntimeData = {
-    asyncHandle: [],
-    count: 0
+  asyncHandle: [],
+  count: 0,
 }
 
 export default async function bootstrap(entry: string) {
-    globalThis.setTimeout = (fn: Function, delay: number, ...arg: any[]) => {
-        runtimeData.asyncHandle[runtimeData.count] = () => {
-            fn(...arg);
-        }
-        this.timer.send(runtimeData.count, delay)
-        runtimeData.count++
+  //@ts-ignore
+  globalThis.setTimeout = (fn: Function, delay: number, ...arg: any[]) => {
+    runtimeData.asyncHandle[runtimeData.count] = () => {
+      fn(...arg)
     }
-    globalThis.exec = (id: number) => {
-        if (runtimeData.asyncHandle[id]) {
-            let fn = runtimeData.asyncHandle[id]
-            delete runtimeData.asyncHandle[id]
-            fn();
-        }
+    this.timer.send(runtimeData.count, delay)
+    runtimeData.count++
+  }
+  globalThis.exec = (id: number) => {
+    if (runtimeData.asyncHandle[id]) {
+      let fn = runtimeData.asyncHandle[id]
+      delete runtimeData.asyncHandle[id]
+      fn()
     }
+  }
 
-    await import(entry)
+  await import(entry)
 }
