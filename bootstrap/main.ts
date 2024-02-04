@@ -3,24 +3,23 @@ interface RuntimeData {
   count: number
 }
 
-var runtimeData: RuntimeData = {
-  asyncHandle: [],
-  count: 0,
-}
-
 export default async function bootstrap(entry: string) {
+  var runtime: RuntimeData = {
+    asyncHandle: [],
+    count: 0,
+  }
   //@ts-ignore
   globalThis.setTimeout = (fn: Function, delay: number, ...arg: any[]) => {
-    runtimeData.asyncHandle[runtimeData.count] = () => {
+    runtime.asyncHandle[runtime.count] = () => {
       fn(...arg)
     }
-    this.timer.send(runtimeData.count, delay)
-    runtimeData.count++
+    this.timer.send(runtime.count, delay)
+    runtime.count++
   }
   globalThis.exec = (id: number) => {
-    if (runtimeData.asyncHandle[id]) {
-      let fn = runtimeData.asyncHandle[id]
-      delete runtimeData.asyncHandle[id]
+    if (runtime.asyncHandle[id]) {
+      let fn = runtime.asyncHandle[id]
+      delete runtime.asyncHandle[id]
       fn()
     }
   }

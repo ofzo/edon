@@ -110,18 +110,18 @@ impl Runtime {
         state
     }
 
-    fn bootstrap(&mut self, entry: &String) {
+    fn bootstrap(&mut self, entry: &String) -> anyhow::Result<()> {
         let isolate = self.isolate.as_mut();
         let state_rc = Self::state(isolate);
         let graph_rc = Self::graph(isolate);
 
         // bootstrap.js
         let mut bootstrap_js = PathBuf::new();
-        bootstrap_js.push("bootstrap.js");
+        bootstrap_js.push("bootstrap.ts");
         let dependency = compile::compile(
             &bootstrap_js.to_string_lossy().to_string(),
             &include_str!("../../bootstrap/main.ts").to_string(),
-        );
+        )?;
 
         dependency.initialize(isolate);
         dependency.evaluate(isolate);
@@ -153,10 +153,11 @@ impl Runtime {
 
         let entry = v8::String::new(tc_scope, &entry).unwrap();
         fun.call(tc_scope, this.into(), &[entry.into()]);
+        Ok(())
     }
 
     pub async fn run(&mut self, entry: &String) -> anyhow::Result<()> {
-        self.bootstrap(entry);
+        self.bootstrap(entry)?;
 
         let isolate = self.isolate.as_mut();
         let state_rc = Self::state(isolate);
@@ -185,11 +186,11 @@ impl Runtime {
         }
     }
 
-    async fn import(isolate: &mut Isolate, entry: &String, base: &String) -> anyhow::Result<()> {
+    async fn import(isolate: &mut Isolate, source: &String, base: &String) -> anyhow::Result<()> {
         let graph_rc = Self::graph(isolate);
         let graph = graph_rc.borrow();
         let mut table = graph.table.borrow_mut();
 
-        table.append(entry, base).await
+        table.append(source, base).await
     }
 }

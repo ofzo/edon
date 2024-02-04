@@ -37,7 +37,7 @@ pub async fn load(filename: &String) -> anyhow::Result<ModuleDependency> {
         let now = Local::now().timestamp_millis();
         let data = reqwest::get(filename).await?;
         let data = data.text().await?;
-        let data = compile(filename, &data);
+        let data = compile(filename, &data)?;
         println!(
             "{} {}",
             "Downland ".green(),
@@ -50,8 +50,7 @@ pub async fn load(filename: &String) -> anyhow::Result<ModuleDependency> {
         return Ok(data);
     };
     let data = tokio::fs::read(&filename).await?;
-    let data = compile(filename, &String::from_utf8_lossy(&data).to_string());
-    return Ok(data);
+    compile(filename, &String::from_utf8_lossy(&data).to_string())
 }
 
 #[derive(Debug)]
@@ -63,26 +62,26 @@ impl DependencyGraph {
         dep.append(entry, base).await?;
         Ok(dep)
     }
-    pub async fn append(&mut self, entry: &String, base: &String) -> anyhow::Result<()> {
+    pub async fn append(&mut self, source: &String, base: &String) -> anyhow::Result<()> {
         //
-        let mut preload = queue![(entry.clone(), base.clone())];
+        let mut preload = queue![(source.clone(), base.clone())];
 
         let table = &mut self.0;
 
-        while let Ok((entry, base)) = preload.remove() {
-            let url = resolve(&entry, &base);
+        while let Ok((source, base)) = preload.remove() {
+            let url = resolve(&source, &base);
             let dep = load(&url).await?;
             let base = dep.filename.clone();
-            for specifier in &dep.deps {
-                if table.get(specifier).is_none() {
-                    preload.add((specifier.clone(), base.clone())).unwrap();
+            for source in &dep.deps {
+                if table.get(source).is_none() {
+                    preload.add((source.clone(), base.clone())).unwrap();
                 }
             }
             table.insert(dep.filename.clone(), dep);
         }
         Ok(())
     }
-    pub fn get(&self, specifier: &String) -> Option<&ModuleDependency> {
-        self.0.get(specifier)
+    pub fn get(&self, source: &String) -> Option<&ModuleDependency> {
+        self.0.get(source)
     }
 }

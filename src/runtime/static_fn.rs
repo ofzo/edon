@@ -1,12 +1,12 @@
 use super::{asynchronous::AsynchronousKind, Runtime};
-use crate::{graph::resolve, runner::console::console_format};
+use crate::{graph::resolve, builtin::console::console_format};
 use std::{task::Poll, time::Duration};
 use url::Url;
 
 impl Runtime {
-    pub fn resolve<'s>(
+    pub fn resolve_module_callback<'s>(
         context: v8::Local<'s, v8::Context>,
-        source: v8::Local<'s, v8::String>,
+        specifier: v8::Local<'s, v8::String>,
         _import_assertions: v8::Local<'s, v8::FixedArray>,
         referrer: v8::Local<'s, v8::Module>,
     ) -> Option<v8::Local<'s, v8::Module>> {
@@ -16,7 +16,7 @@ impl Runtime {
 
         let state = graph_rc.borrow();
 
-        let source = source.to_rust_string_lossy(scope);
+        let source = specifier.to_rust_string_lossy(scope);
 
         let url = if source.starts_with("http") {
             let url = Url::parse(&source).expect(format!("parse url failed: {}", source).as_str());
@@ -28,7 +28,8 @@ impl Runtime {
 
             let hash = state.hash.borrow();
             let url = hash.get(&module_id).unwrap();
-            url.clone()
+            resolve(&source, url)
+            // url.clone()
         };
 
         let module = state.module.borrow();
@@ -44,12 +45,12 @@ impl Runtime {
         scope: &mut v8::HandleScope<'a>,
         _host_defined_options: v8::Local<'a, v8::Data>,
         resource: v8::Local<'a, v8::Value>,
-        specifier: v8::Local<'a, v8::String>,
+        source: v8::Local<'a, v8::String>,
         _import_assertions: v8::Local<'a, v8::FixedArray>,
     ) -> Option<v8::Local<'a, v8::Promise>> {
         let state_rc = Self::state(scope);
         let resource = resource.to_rust_string_lossy(scope).to_string();
-        let specifier = specifier.to_rust_string_lossy(scope).to_string();
+        let source = source.to_rust_string_lossy(scope).to_string();
 
         let resolver = v8::PromiseResolver::new(scope).unwrap();
         let promise = resolver.get_promise(scope);
@@ -59,7 +60,7 @@ impl Runtime {
 
         state.pending_ops.push(Box::pin(async move {
             Poll::Ready(AsynchronousKind::Import((
-                resolve(&specifier, &resource),
+                resolve(&source, &resource),
                 resolver,
             )))
         }));
@@ -82,7 +83,7 @@ impl Runtime {
     pub fn timer_send(
         scope: &mut v8::HandleScope,
         info: v8::FunctionCallbackArguments,
-        mut rv: v8::ReturnValue,
+        rv: v8::ReturnValue,
     ) {
         let state_rc = Runtime::state(scope);
         let id = info

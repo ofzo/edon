@@ -80,10 +80,20 @@ pub fn console_format(
     }
     if v.is_object() {
         let obj = v8::Local::<v8::Object>::try_from(*v).unwrap();
+
+        if v.is_native_error() {
+            let stack = v8::String::new(scope, "stack").unwrap();
+            let stack = obj
+                .get(scope, stack.into())
+                .unwrap()
+                .to_rust_string_lossy(scope);
+            return format!("{stack}");
+        }
+
         let names = obj
             .get_own_property_names(scope, Default::default())
             .unwrap();
-        // let prototype = obj.get_prototype(scope).unwrap();
+
         let mut fmt = (0..names.length())
             .map(|index| {
                 let name = names.get_index(scope, index).unwrap();
@@ -114,7 +124,7 @@ pub fn console_format(
     format!("")
 }
 
-pub fn console_log(
+pub fn log(
     scope: &mut v8::HandleScope,
     args: v8::FunctionCallbackArguments,
     mut _rv: v8::ReturnValue,
@@ -128,8 +138,5 @@ pub fn console_log(
         .collect::<Vec<_>>()
         .join(" ");
 
-    println!(
-        "{} {result}",
-        format!("{}", Utc::now().format("%Y-%m-%d %H:%M:%S%.3f")).color("gray")
-    );
+    println!("{result}");
 }

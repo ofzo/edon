@@ -1,4 +1,4 @@
-use crate::runner::console::console_log;
+use crate::builtin::console::log;
 
 use super::Runtime;
 
@@ -14,10 +14,10 @@ impl Runtime {
         let console_object = v8::Object::new(scope);
         global.set(scope, console_key.into(), console_object.into());
 
-        Self::set_func(scope, console_object, "log", console_log);
-        Self::set_func(scope, console_object, "info", console_log);
-        Self::set_func(scope, console_object, "error", console_log);
-        Self::set_func(scope, console_object, "warn", console_log);
+        Self::set_func(scope, console_object, "log", log);
+        Self::set_func(scope, console_object, "info", log);
+        Self::set_func(scope, console_object, "error", log);
+        Self::set_func(scope, console_object, "warn", log);
 
         scope.escape(context)
     }

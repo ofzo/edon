@@ -1,25 +1,27 @@
+use anyhow::anyhow;
 use std::task::Poll;
-
 use v8::Isolate;
 
 use super::Runtime;
 
 #[derive(Debug, PartialEq)]
 pub enum AsynchronousKind {
-    Operation(u32),
     Import((String, v8::Global<v8::PromiseResolver>)),
+    Operation(u32),
 }
 
 impl AsynchronousKind {
     pub fn exec(&self, isolate: &mut Isolate) -> Poll<()> {
-        match self {
+        match match self {
             AsynchronousKind::Operation(id) => Self::operation(isolate, id.clone()),
-            AsynchronousKind::Import((specifier, resolver)) => {
-                Self::import(isolate, specifier, resolver)
-            }
+            AsynchronousKind::Import((source, resolver)) => Self::import(isolate, source, resolver),
+        } {
+            Ok(v) => v,
+            Err(e) => panic!("error {}", e),
         }
     }
-    fn operation(isolate: &mut Isolate, id: u32) -> Poll<()> {
+
+    fn operation(isolate: &mut Isolate, id: u32) -> anyhow::Result<Poll<()>> {
         let state_rc = Runtime::state(isolate);
 
         let context = {
@@ -41,15 +43,23 @@ impl AsynchronousKind {
             false,
         );
         let source = v8::String::new(scope, &format!("globalThis.exec({id});")).unwrap();
-        let script = v8::Script::compile(scope, source, Some(&origin)).unwrap();
-        script.run(scope).unwrap();
-        return Poll::Ready(());
+        let tc_scope = &mut v8::TryCatch::new(scope);
+        let script = v8::Script::compile(tc_scope, source, Some(&origin))
+            .ok_or(anyhow!("compile script failure"))?;
+        script
+            .run(tc_scope)
+            .ok_or(anyhow!("run script failure {}", id))?;
+
+        if tc_scope.has_caught() {
+            panic!("exec error");
+        }
+        return Ok(Poll::Ready(()));
     }
     fn import(
         isolate: &mut Isolate,
-        specifier: &String,
+        source: &String,
         resolver: &v8::Global<v8::PromiseResolver>,
-    ) -> Poll<()> {
+    ) -> anyhow::Result<Poll<()>> {
         let state_rc = Runtime::state(isolate);
         let graph_rc = Runtime::graph(isolate);
 
@@ -61,17 +71,17 @@ impl AsynchronousKind {
         if {
             let graph = graph_rc.borrow();
             let table = graph.table.borrow();
-            table.get(specifier).is_none()
+            table.get(source).is_none()
         } {
             let base = format!("");
-            let _ = futures::executor::block_on(Runtime::import(isolate, specifier, &base));
+            let _ = futures::executor::block_on(Runtime::import(isolate, source, &base));
         };
 
         let graph = graph_rc.borrow();
         let table = graph.table.borrow();
         let dep = table
-            .get(specifier)
-            .expect(&format!("specifier `{}` not found", specifier));
+            .get(source)
+            .ok_or(anyhow!("source `{}` not found", source))?;
 
         if dep.initialize(isolate).is_some() {
             dep.evaluate(isolate);
@@ -83,13 +93,19 @@ impl AsynchronousKind {
 
             let graph = graph_rc.borrow();
             let module = graph.module.borrow();
-            if let Some(instance) = module.get(specifier) {
+            if let Some(instance) = module.get(source) {
                 let expose = v8::Local::new(tc_scope, &instance.expose);
                 let obj = expose.to_object(tc_scope).unwrap();
                 resolver.resolve(tc_scope, obj.into());
             };
         };
 
-        return Poll::Ready(());
+        let module = graph.module.borrow();
+        if module.get(source).is_none() {
+            let t = table.get(source).unwrap();
+            t.initialize(isolate);
+        }
+
+        return Ok(Poll::Ready(()));
     }
 }
