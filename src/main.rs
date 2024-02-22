@@ -1,9 +1,10 @@
+use anyhow::bail;
 use std::env;
-mod compile;
-mod graph;
 mod builtin;
-mod runtime;
+mod compile;
 mod compile_oxc;
+mod graph;
+mod runtime;
 // mod compile_swc;
 
 use graph::resolve;
@@ -14,7 +15,7 @@ use runtime::Runtime;
 async fn main() -> anyhow::Result<()> {
     let args = env::args().collect::<Vec<_>>();
     if args.len() <= 1 {
-        panic!("no args");
+        bail!("no args");
     }
 
     let current_dir = env::current_dir()?.to_string_lossy().to_string();

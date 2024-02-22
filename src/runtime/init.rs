@@ -1,4 +1,5 @@
 use crate::builtin::console::log;
+use crate::builtin::fetch::fetch;
 
 use super::Runtime;
 
@@ -9,6 +10,8 @@ impl Runtime {
         let context = v8::Context::new(scope);
         let global = context.global(scope);
         let scope = &mut v8::ContextScope::new(scope, context);
+
+        Self::set_func(scope, global, "fetch", fetch);
 
         let console_key = v8::String::new(scope, "console").unwrap();
         let console_object = v8::Object::new(scope);

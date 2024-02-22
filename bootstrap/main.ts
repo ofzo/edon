@@ -8,7 +8,7 @@ export default async function bootstrap(entry: string) {
     asyncHandle: [],
     count: 0,
   }
-  //@ts-ignore
+  // @ts-ignore
   globalThis.setTimeout = (fn: Function, delay: number, ...arg: any[]) => {
     runtime.asyncHandle[runtime.count] = () => {
       fn(...arg)

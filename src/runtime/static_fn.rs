@@ -1,12 +1,12 @@
 use super::{asynchronous::AsynchronousKind, Runtime};
-use crate::{graph::resolve, builtin::console::console_format};
+use crate::{builtin::console::console_format, graph::resolve};
 use std::{task::Poll, time::Duration};
 use url::Url;
 
 impl Runtime {
     pub fn resolve_module_callback<'s>(
         context: v8::Local<'s, v8::Context>,
-        specifier: v8::Local<'s, v8::String>,
+        source: v8::Local<'s, v8::String>,
         _import_assertions: v8::Local<'s, v8::FixedArray>,
         referrer: v8::Local<'s, v8::Module>,
     ) -> Option<v8::Local<'s, v8::Module>> {
@@ -16,7 +16,7 @@ impl Runtime {
 
         let state = graph_rc.borrow();
 
-        let source = specifier.to_rust_string_lossy(scope);
+        let source = source.to_rust_string_lossy(scope);
 
         let url = if source.starts_with("http") {
             let url = Url::parse(&source).expect(format!("parse url failed: {}", source).as_str());
@@ -38,7 +38,7 @@ impl Runtime {
             .expect(format!("get module failure: {}", url).as_str());
         let module = v8::Local::new(scope, &info.module);
 
-        return Some(module);
+        Some(module)
     }
 
     pub fn dynamically_import<'a>(

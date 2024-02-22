@@ -13,7 +13,7 @@ mod constants;
 mod init;
 mod static_fn;
 
-use asynchronous::AsynchronousKind;
+pub use asynchronous::AsynchronousKind;
 type Async = Pin<Box<dyn Future<Output = Poll<AsynchronousKind>>>>;
 
 #[derive(Debug)]
@@ -87,7 +87,7 @@ impl Runtime {
             }))) as *mut c_void,
         );
 
-        return Self { isolate, sender };
+        Self { isolate, sender }
     }
 
     pub fn state(isolate: &Isolate) -> Rc<RefCell<RuntimeState>> {
@@ -96,7 +96,7 @@ impl Runtime {
 
         let state_rc = unsafe { Rc::from_raw(state_ptr) };
         let state = state_rc.clone();
-        Rc::into_raw(state_rc);
+        let _ = Rc::into_raw(state_rc);
         state
     }
 
@@ -106,7 +106,7 @@ impl Runtime {
 
         let state_rc = unsafe { Rc::from_raw(state_ptr) };
         let state = state_rc.clone();
-        Rc::into_raw(state_rc);
+        let _ = Rc::into_raw(state_rc);
         state
     }
 
@@ -119,12 +119,12 @@ impl Runtime {
         let mut bootstrap_js = PathBuf::new();
         bootstrap_js.push("bootstrap.ts");
         let dependency = compile::compile(
-            &bootstrap_js.to_string_lossy().to_string(),
+            bootstrap_js.to_string_lossy().as_ref(),
             &include_str!("../../bootstrap/main.ts").to_string(),
         )?;
 
-        dependency.initialize(isolate);
-        dependency.evaluate(isolate);
+        dependency.initialize(isolate)?;
+        dependency.evaluate(isolate)?;
 
         //
         let graph = graph_rc.borrow();
@@ -170,15 +170,20 @@ impl Runtime {
                 break Ok(());
             }
             poll_fn(|cx| loop {
-                if let Poll::Ready(Some(Poll::Ready(op))) = {
+                let result = {
                     let mut state = state_rc.borrow_mut();
                     let result = state.pending_ops.poll_next_unpin(cx);
                     if Poll::Pending == result {
                         continue;
                     }
                     result
-                } {
-                    break op.exec(isolate);
+                };
+                if let Poll::Ready(Some(Poll::Ready(op))) = result {
+                    match op.exec(isolate) {
+                        Ok(v) => break v,
+                        Err(err) => eprintln!("{err:?}"),
+                    }
+                    break Poll::Ready(());
                 }
                 break Poll::Pending;
             })

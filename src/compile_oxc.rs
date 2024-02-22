@@ -1,11 +1,10 @@
-use anyhow::anyhow;
+use std::path::Path;
+
+use anyhow::bail;
 use oxc_allocator::Allocator;
-use oxc_ast::{AstKind, Visit};
+use oxc_ast::{AstKind, Trivias, Visit};
 use oxc_codegen::{Codegen, CodegenOptions};
-use oxc_semantic::SemanticBuilder;
-use oxc_span::{GetSpan, SourceType};
-use oxc_transformer::{TransformOptions, TransformTarget, Transformer};
-use tracing::Instrument;
+use oxc_transformer::{TransformOptions, Transformer};
 
 use crate::compile::ModuleDependency;
 
@@ -13,6 +12,9 @@ use crate::compile::ModuleDependency;
 struct ImportParser {
     sync_imports: Vec<String>,
     async_imports: Vec<String>,
+    specifiers: Vec<String>,
+    namespaces: Vec<String>,
+    default_import: bool,
 }
 
 impl<'a> oxc_ast::Visit<'a> for ImportParser {
@@ -35,13 +37,17 @@ impl<'a> oxc_ast::Visit<'a> for ImportParser {
         use oxc_ast::ast::ImportDeclarationSpecifier;
         match specifier {
             ImportDeclarationSpecifier::ImportSpecifier(import_specifer) => {
-                println!("ImportDeclarationSpecifier: {:?}", import_specifer.span);
+                // println!("ImportSpecifier: {:?}", import_specifer.imported.name());
+                self.specifiers
+                    .push(import_specifer.imported.name().to_string());
             }
-            ImportDeclarationSpecifier::ImportDefaultSpecifier(import_specfier) => {
-                println!("ImportDeclarationSpecifier: {:?}", import_specfier.span);
+            ImportDeclarationSpecifier::ImportDefaultSpecifier(_import_specfier) => {
+                // println!("ImportDefaultSpecifier: {:?}", import_specfier);
+                self.default_import = true;
             }
             ImportDeclarationSpecifier::ImportNamespaceSpecifier(import_specifer) => {
-                println!("ImportDeclarationSpecifier: {:?}", import_specifer.span);
+                // println!("ImportNamespaceSpecifier: {:?}", import_specifer);
+                self.namespaces.push(import_specifer.local.name.to_string());
             }
         }
     }
@@ -55,43 +61,63 @@ impl<'a> oxc_ast::Visit<'a> for ImportParser {
     }
 }
 
-pub fn compile(file_name: &str, source_text: &str) -> anyhow::Result<ModuleDependency> {
+pub fn compile(file_name: &str, content: &str) -> anyhow::Result<ModuleDependency> {
     let allo = Allocator::default();
     let source_type = oxc_span::SourceType::from_path(file_name).unwrap();
 
-    let ret = oxc_parser::Parser::new(&allo, &source_text, source_type).parse();
+    let ret = oxc_parser::Parser::new(&allo, &content, source_type).parse();
 
     if !ret.errors.is_empty() {
-        for error in ret.errors {
-            let error = error.with_source_code(source_text.to_string());
-            println!("{error:?}");
+        let mut err = vec![];
+        for report in ret.errors {
+            err.push(format!("{}", report.with_source_code(content.to_string())));
         }
-        return Err(anyhow!("compile error"));
+        bail!("{}", err.join("\n"));
     }
 
-    let mut pass = ImportParser::default();
-    pass.visit_program(&ret.program);
-
-    let semantic = SemanticBuilder::new(&source_text, source_type)
-        .with_trivias(ret.trivias)
-        .build(&ret.program)
-        .semantic;
+    let mut import_parser = ImportParser::default();
+    import_parser.visit_program(&ret.program);
 
     let program = allo.alloc(ret.program);
     let transform_options = TransformOptions::default();
 
-    Transformer::new(&allo, source_type, semantic, transform_options)
-        .build(program)
-        .unwrap();
+    let trivias = Trivias::default();
+    let transformer = Transformer::new(
+        &allo,
+        Path::new(file_name),
+        source_type,
+        content,
+        &trivias,
+        transform_options,
+    );
 
-    let code = Codegen::<false>::new(source_text.len(), CodegenOptions).build(program);
+    if let Err(errors) = transformer.build(program) {
+        let err = errors
+            .iter()
+            .map(|err| format!("{}", err))
+            .collect::<Vec<_>>()
+            .join("\n");
+        bail!("{err}");
+    }
+
+    let code = Codegen::<true>::new(
+        file_name,
+        content,
+        CodegenOptions {
+            enable_source_map: true,
+            enable_typescript: false, // allow output typescript code
+        },
+    )
+    .build(program);
 
     Ok(ModuleDependency {
-        deps: pass.sync_imports,
-        async_deps: pass.async_imports,
-        specifier: vec![],
-        source: code,
-        map: None,
+        deps: import_parser.sync_imports,
+        async_deps: import_parser.async_imports,
+        specifiers: import_parser.specifiers,
+        source: code.source_text,
+        map: code
+            .source_map
+            .map(|m| m.to_json_string().unwrap_or_default()),
         filename: file_name.to_string(),
         is_main: false,
     })

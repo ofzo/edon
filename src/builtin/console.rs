@@ -94,7 +94,7 @@ pub fn console_format(
             .get_own_property_names(scope, Default::default())
             .unwrap();
 
-        let mut fmt = (0..names.length())
+        let fmt = (0..names.length())
             .map(|index| {
                 let name = names.get_index(scope, index).unwrap();
                 let val = obj.get(scope, name).unwrap();

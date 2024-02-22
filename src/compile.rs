@@ -11,7 +11,7 @@ use v8::Isolate;
 pub struct ModuleDependency {
     pub deps: Vec<String>,
     pub async_deps: Vec<String>,
-    pub specifier: Vec<String>,
+    pub specifiers: Vec<String>,
     pub source: String,
     pub map: Option<String>,
     pub filename: String,
@@ -19,7 +19,7 @@ pub struct ModuleDependency {
 }
 
 impl ModuleDependency {
-    pub fn initialize(&self, isolate: &mut Isolate) -> Option<()> {
+    pub fn initialize(&self, isolate: &mut Isolate) -> anyhow::Result<()> {
         let graph_rc = Runtime::graph(isolate);
 
         {
@@ -28,25 +28,25 @@ impl ModuleDependency {
 
             let module = module.borrow();
             if module.get(&self.filename).is_some() {
-                return Some(());
+                return Ok(());
             }
         }
 
         // {
-        self.deps.iter().for_each(|url| {
-            let state = graph_rc.borrow();
-            let graph = state.table.borrow();
+        let state = graph_rc.borrow();
+        let graph = state.table.borrow();
+        for url in self.deps.iter() {
             let url = resolve(url, &self.filename);
             let dep = graph.get(&url).unwrap();
-            dep.initialize(isolate);
-        });
+            dep.initialize(isolate)?
+        }
 
         // }
-        self.instantiate_module(isolate);
+        self.instantiate_module(isolate)?;
 
-        return Some(());
+        Ok(())
     }
-    fn instantiate_module(&self, isolate: &mut Isolate) {
+    fn instantiate_module(&self, isolate: &mut Isolate) -> anyhow::Result<()> {
         let state_rc = Runtime::state(isolate);
         let graph_rc = Runtime::graph(isolate);
 
@@ -80,9 +80,13 @@ impl ModuleDependency {
             .insert(module_id, self.filename.clone());
 
         let tc_scope = &mut v8::TryCatch::new(scope);
-        module
-            .instantiate_module(tc_scope, Runtime::resolve_module_callback)
-            .unwrap();
+        let result = module.instantiate_module(tc_scope, Runtime::resolve_module_callback);
+        if result.is_none() {
+            let expection = tc_scope.exception().unwrap();
+            let msg = expection.to_rust_string_lossy(tc_scope);
+            return Err(anyhow!("{}", msg));
+        }
+
         let expose = &module.get_module_namespace();
         let v8_module = v8::Global::new(tc_scope, module);
         let expose = v8::Global::new(tc_scope, expose);
@@ -95,21 +99,22 @@ impl ModuleDependency {
                 expose,
             },
         );
+        Ok(())
     }
 
-    pub fn evaluate(&self, isolate: &mut Isolate) {
+    pub fn evaluate(&self, isolate: &mut Isolate) -> anyhow::Result<()> {
         let state_rc = Runtime::state(isolate);
         let graph_rc = Runtime::graph(isolate);
 
-        self.deps.iter().for_each(|url| {
+        for url in &self.deps {
             let graph = graph_rc.borrow();
             let table = graph.table.borrow();
-            let url = resolve(url, &self.filename);
+            let url = resolve(&url, &self.filename);
             let dep = table
                 .get(&url)
-                .expect(&format!("table get failure `{url}`"));
-            dep.evaluate(isolate);
-        });
+                .ok_or(anyhow!("table get failure `{url}`"))?;
+            dep.evaluate(isolate)?;
+        }
 
         let context = state_rc.borrow().context.clone();
         let scope = &mut v8::HandleScope::with_context(isolate, context);
@@ -122,20 +127,25 @@ impl ModuleDependency {
         let module = v8::Local::new(tc_scope, &info.module);
         let result = module.evaluate(tc_scope).unwrap();
 
+        if tc_scope.has_caught() {
+            let expection = tc_scope.exception().unwrap();
+            return Err(anyhow!("{}", expection.to_rust_string_lossy(tc_scope)));
+        }
+
         if result.is_promise() {
             let promise = v8::Local::<v8::Promise>::try_from(result).unwrap();
-            match promise.state() {
-                v8::PromiseState::Rejected => {
-                    println!("evaluate fail: {}", self.filename);
-                }
-                _ => {}
+            if let v8::PromiseState::Rejected = promise.state() {
+                let result = promise.result(tc_scope);
+                let stack = tc_scope.stack_trace();
+                return Err(anyhow!(
+                    "{}\n  at {:?}",
+                    result.to_rust_string_lossy(tc_scope),
+                    stack
+                ));
             }
         }
+        Ok(())
     }
 }
 
 pub use compile_oxc::compile;
-// pub fn compile(file_name: &str, source_text: &str) -> anyhow::Result<ModuleDependency> {
-//     return compile_oxc::compile(file_name, source_text);
-//     // return compile_swc::compile(file_name, source_text);
-// }
