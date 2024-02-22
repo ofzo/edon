@@ -11,13 +11,10 @@ pub enum AsynchronousKind {
 }
 
 impl AsynchronousKind {
-    pub fn exec(&self, isolate: &mut Isolate) -> Poll<()> {
-        match match self {
+    pub fn exec(&self, isolate: &mut Isolate) -> anyhow::Result<Poll<()>> {
+        match self {
             AsynchronousKind::Operation(id) => Self::operation(isolate, id.clone()),
             AsynchronousKind::Import((source, resolver)) => Self::import(isolate, source, resolver),
-        } {
-            Ok(v) => v,
-            Err(e) => panic!("error {}", e),
         }
     }
 
@@ -83,7 +80,7 @@ impl AsynchronousKind {
             .get(source)
             .ok_or(anyhow!("source `{}` not found", source))?;
 
-        if dep.initialize(isolate).is_some() {
+        if dep.initialize(isolate).is_ok() {
             dep.evaluate(isolate);
 
             let scope = &mut v8::HandleScope::with_context(isolate, context);
@@ -103,9 +100,9 @@ impl AsynchronousKind {
         let module = graph.module.borrow();
         if module.get(source).is_none() {
             let t = table.get(source).unwrap();
-            t.initialize(isolate);
+            t.initialize(isolate)?;
         }
 
-        return Ok(Poll::Ready(()));
+        Ok(Poll::Ready(()))
     }
 }

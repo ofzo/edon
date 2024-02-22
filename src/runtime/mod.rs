@@ -87,7 +87,7 @@ impl Runtime {
             }))) as *mut c_void,
         );
 
-        return Self { isolate, sender };
+        Self { isolate, sender }
     }
 
     pub fn state(isolate: &Isolate) -> Rc<RefCell<RuntimeState>> {
@@ -123,7 +123,7 @@ impl Runtime {
             &include_str!("../../bootstrap/main.ts").to_string(),
         )?;
 
-        dependency.initialize(isolate);
+        dependency.initialize(isolate)?;
         dependency.evaluate(isolate);
 
         //
@@ -178,7 +178,11 @@ impl Runtime {
                     }
                     result
                 } {
-                    break op.exec(isolate);
+                    match op.exec(isolate) {
+                        Ok(v) => break v,
+                        Err(err) => eprintln!("{err:?}"),
+                    }
+                    break Poll::Ready(());
                 }
                 break Poll::Pending;
             })

@@ -4,6 +4,7 @@ use crate::{
     runtime::{ModuleInstance, Runtime},
 };
 use anyhow::anyhow;
+use core::panic;
 use std::{io::Result, path::PathBuf, sync::Arc};
 use v8::Isolate;
 
@@ -11,7 +12,7 @@ use v8::Isolate;
 pub struct ModuleDependency {
     pub deps: Vec<String>,
     pub async_deps: Vec<String>,
-    pub specifier: Vec<String>,
+    pub specifiers: Vec<String>,
     pub source: String,
     pub map: Option<String>,
     pub filename: String,
@@ -19,7 +20,7 @@ pub struct ModuleDependency {
 }
 
 impl ModuleDependency {
-    pub fn initialize(&self, isolate: &mut Isolate) -> Option<()> {
+    pub fn initialize(&self, isolate: &mut Isolate) -> anyhow::Result<()> {
         let graph_rc = Runtime::graph(isolate);
 
         {
@@ -28,25 +29,25 @@ impl ModuleDependency {
 
             let module = module.borrow();
             if module.get(&self.filename).is_some() {
-                return Some(());
+                return Ok(());
             }
         }
 
         // {
-        self.deps.iter().for_each(|url| {
-            let state = graph_rc.borrow();
-            let graph = state.table.borrow();
+        let state = graph_rc.borrow();
+        let graph = state.table.borrow();
+        for url in self.deps.iter() {
             let url = resolve(url, &self.filename);
             let dep = graph.get(&url).unwrap();
-            dep.initialize(isolate);
-        });
+            dep.initialize(isolate)?
+        }
 
         // }
-        self.instantiate_module(isolate);
+        self.instantiate_module(isolate)?;
 
-        return Some(());
+        Ok(())
     }
-    fn instantiate_module(&self, isolate: &mut Isolate) {
+    fn instantiate_module(&self, isolate: &mut Isolate) -> anyhow::Result<()> {
         let state_rc = Runtime::state(isolate);
         let graph_rc = Runtime::graph(isolate);
 
@@ -80,9 +81,13 @@ impl ModuleDependency {
             .insert(module_id, self.filename.clone());
 
         let tc_scope = &mut v8::TryCatch::new(scope);
-        module
-            .instantiate_module(tc_scope, Runtime::resolve_module_callback)
-            .unwrap();
+        let result = module.instantiate_module(tc_scope, Runtime::resolve_module_callback);
+        if result.is_none() {
+            let expection = tc_scope.exception().unwrap();
+            let msg = expection.to_rust_string_lossy(tc_scope);
+            return Err(anyhow!("{}", msg));
+        }
+
         let expose = &module.get_module_namespace();
         let v8_module = v8::Global::new(tc_scope, module);
         let expose = v8::Global::new(tc_scope, expose);
@@ -95,6 +100,7 @@ impl ModuleDependency {
                 expose,
             },
         );
+        Ok(())
     }
 
     pub fn evaluate(&self, isolate: &mut Isolate) {

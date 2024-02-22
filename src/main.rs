@@ -9,8 +9,9 @@ mod compile_oxc;
 use graph::resolve;
 use graph::DependencyGraph;
 use runtime::Runtime;
+use tokio::main;
 
-#[tokio::main]
+#[main]
 async fn main() -> anyhow::Result<()> {
     let args = env::args().collect::<Vec<_>>();
     if args.len() <= 1 {
