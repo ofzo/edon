@@ -1,5 +1,5 @@
 use super::{asynchronous::AsynchronousKind, Runtime};
-use crate::{graph::resolve, builtin::console::console_format};
+use crate::{builtin::console::console_format, graph::resolve};
 use std::{task::Poll, time::Duration};
 use url::Url;
 

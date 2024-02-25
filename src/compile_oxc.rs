@@ -70,11 +70,11 @@ pub fn compile(file_name: &str, content: &str) -> anyhow::Result<ModuleDependenc
     let ret = oxc_parser::Parser::new(&allo, &content, source_type).parse();
 
     if !ret.errors.is_empty() {
-        for error in ret.errors {
-            let error = error.with_source_code(content.to_string());
-            println!("{error:?}");
+        let mut err = vec![];
+        for report in ret.errors {
+            err.push(format!("{}", report.with_source_code(content.to_string())));
         }
-        return Err(anyhow!("compile error"));
+        return Err(anyhow!("{}", err.join("\n")));
     }
 
     let mut import_parser = ImportParser::default();
@@ -91,10 +91,12 @@ pub fn compile(file_name: &str, content: &str) -> anyhow::Result<ModuleDependenc
     let transformer = Transformer::new(&allo, source_type, semantic, transform_options);
 
     if let Err(errors) = transformer.build(program) {
-        for err in errors {
-            println!("{}", err);
-        }
-        panic!("");
+        let err = errors
+            .iter()
+            .map(|err| format!("{}", err))
+            .collect::<Vec<_>>()
+            .join("\n");
+        return Err(anyhow!("{err}"));
     }
 
     let code = Codegen::<true>::new(content.len(), CodegenOptions).build(program);

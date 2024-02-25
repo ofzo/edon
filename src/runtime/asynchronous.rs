@@ -1,4 +1,5 @@
 use anyhow::anyhow;
+use futures::Future;
 use std::task::Poll;
 use v8::Isolate;
 
@@ -8,6 +9,7 @@ use super::Runtime;
 pub enum AsynchronousKind {
     Import((String, v8::Global<v8::PromiseResolver>)),
     Operation(u32),
+    // Callback(impl Future<Output = anyhow::Result<()>>),
 }
 
 impl AsynchronousKind {
@@ -15,6 +17,7 @@ impl AsynchronousKind {
         match self {
             AsynchronousKind::Operation(id) => Self::operation(isolate, id.clone()),
             AsynchronousKind::Import((source, resolver)) => Self::import(isolate, source, resolver),
+            // AsynchronousKind::Callback(f) => f.await,
         }
     }
 
@@ -50,7 +53,7 @@ impl AsynchronousKind {
         if tc_scope.has_caught() {
             panic!("exec error");
         }
-        return Ok(Poll::Ready(()));
+        Ok(Poll::Ready(()))
     }
     fn import(
         isolate: &mut Isolate,
@@ -81,7 +84,7 @@ impl AsynchronousKind {
             .ok_or(anyhow!("source `{}` not found", source))?;
 
         if dep.initialize(isolate).is_ok() {
-            dep.evaluate(isolate);
+            dep.evaluate(isolate)?;
 
             let scope = &mut v8::HandleScope::with_context(isolate, context);
             let tc_scope = &mut v8::TryCatch::new(scope);

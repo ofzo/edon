@@ -1,17 +1,16 @@
 use std::env;
-mod compile;
-mod graph;
 mod builtin;
-mod runtime;
+mod compile;
 mod compile_oxc;
+mod graph;
+mod runtime;
 // mod compile_swc;
 
 use graph::resolve;
 use graph::DependencyGraph;
 use runtime::Runtime;
-use tokio::main;
 
-#[main]
+#[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = env::args().collect::<Vec<_>>();
     if args.len() <= 1 {
