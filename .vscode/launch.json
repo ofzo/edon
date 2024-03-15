@@ -20,7 +20,7 @@
                 }
             },
             "args": [
-                "output/test.ts"
+                "./test/test.ts"
             ],
             "cwd": "${workspaceFolder}"
         }

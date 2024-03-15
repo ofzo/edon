@@ -13,6 +13,7 @@ pub fn set_timeout(
         .int32_value(scope)
         .expect("timeout must be an number");
     let arg = args.get(2);
+
     if callback.is_function() {
         let callback = v8::Local::<v8::Function>::try_from(callback).unwrap();
         let timeout = timeout.max(0) as u64;

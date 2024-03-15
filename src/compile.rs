@@ -4,7 +4,6 @@ use crate::{
     runtime::{ModuleInstance, Runtime},
 };
 use anyhow::anyhow;
-use std::{io::Result, path::PathBuf, sync::Arc};
 use v8::Isolate;
 
 #[derive(Debug)]
@@ -116,8 +115,8 @@ impl ModuleDependency {
             dep.evaluate(isolate)?;
         }
 
-        let context = state_rc.borrow().context.clone();
-        let scope = &mut v8::HandleScope::with_context(isolate, context);
+        let state = state_rc.borrow();
+        let scope = &mut v8::HandleScope::with_context(isolate, &state.context);
         let tc_scope = &mut v8::TryCatch::new(scope);
 
         let state = graph_rc.borrow();

@@ -9,7 +9,7 @@ use super::Runtime;
 pub enum AsynchronousKind {
     Import((String, v8::Global<v8::PromiseResolver>)),
     Operation(u32),
-    // Callback(impl Future<Output = anyhow::Result<()>>),
+    // Fut(dyn Future<Output = anyhow::Result<()>>),
 }
 
 impl AsynchronousKind {
@@ -17,18 +17,15 @@ impl AsynchronousKind {
         match self {
             AsynchronousKind::Operation(id) => Self::operation(isolate, id.clone()),
             AsynchronousKind::Import((source, resolver)) => Self::import(isolate, source, resolver),
-            // AsynchronousKind::Callback(f) => f.await,
+            // AsynchronousKind::Fut() => Self::fut(f),
         }
     }
 
     fn operation(isolate: &mut Isolate, id: u32) -> anyhow::Result<Poll<()>> {
         let state_rc = Runtime::state(isolate);
 
-        let context = {
-            let state = state_rc.borrow();
-            state.context.clone()
-        };
-        let scope = &mut v8::HandleScope::with_context(isolate, context);
+        let state = state_rc.borrow();
+        let scope = &mut v8::HandleScope::with_context(isolate, &state.context);
         let name = v8::String::new(scope, &format!("{id}.js")).unwrap();
         let origin = v8::ScriptOrigin::new(
             scope,
@@ -55,7 +52,7 @@ impl AsynchronousKind {
         }
         Ok(Poll::Ready(()))
     }
-    fn import(
+    pub fn import(
         isolate: &mut Isolate,
         source: &String,
         resolver: &v8::Global<v8::PromiseResolver>,
@@ -63,10 +60,7 @@ impl AsynchronousKind {
         let state_rc = Runtime::state(isolate);
         let graph_rc = Runtime::graph(isolate);
 
-        let context = {
-            let state = state_rc.borrow();
-            state.context.clone()
-        };
+        let state = state_rc.borrow();
 
         if {
             let graph = graph_rc.borrow();
@@ -86,7 +80,7 @@ impl AsynchronousKind {
         if dep.initialize(isolate).is_ok() {
             dep.evaluate(isolate)?;
 
-            let scope = &mut v8::HandleScope::with_context(isolate, context);
+            let scope = &mut v8::HandleScope::with_context(isolate, &state.context);
             let tc_scope = &mut v8::TryCatch::new(scope);
 
             let resolver = resolver.open(tc_scope);
@@ -106,6 +100,12 @@ impl AsynchronousKind {
             t.initialize(isolate)?;
         }
 
+        Ok(Poll::Ready(()))
+    }
+
+    fn fut(
+        f: &(dyn Future<Output = Result<(), anyhow::Error>>),
+    ) -> Result<Poll<()>, anyhow::Error> {
         Ok(Poll::Ready(()))
     }
 }

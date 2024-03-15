@@ -1,6 +1,5 @@
 use std::{process, time::Duration};
 use tokio::{
-    self,
     io::{AsyncBufReadExt, BufReader},
     sync::mpsc,
     time::sleep,

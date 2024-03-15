@@ -1,12 +1,20 @@
 use std::{
-    cell::RefCell, collections::HashMap, ffi::c_void, future::poll_fn, num::NonZeroI32,
-    path::PathBuf, pin::Pin, rc::Rc, task::Poll,
+    cell::RefCell,
+    collections::HashMap,
+    ffi::c_void,
+    future::poll_fn,
+    num::NonZeroI32,
+    path::PathBuf,
+    pin::Pin,
+    rc::Rc,
+    sync::{Arc, Mutex},
+    task::Poll,
 };
 
 use crate::{compile, graph::DependencyGraph};
 use futures::{stream::FuturesUnordered, Future, StreamExt};
 use tokio::sync::mpsc::{self, Receiver, Sender};
-use v8::{Isolate, OwnedIsolate};
+use v8::{Isolate, OwnedIsolate, PromiseResolver};
 
 mod asynchronous;
 mod constants;
@@ -14,7 +22,7 @@ mod init;
 mod static_fn;
 
 pub use asynchronous::AsynchronousKind;
-type Async = Pin<Box<dyn Future<Output = Poll<AsynchronousKind>>>>;
+type Async = Pin<Box<dyn Future<Output = anyhow::Result<()>>>>;
 
 #[derive(Debug)]
 pub struct ModuleInstance {
@@ -32,15 +40,22 @@ pub struct RuntimeGraph {
 #[derive(Debug)]
 pub struct RuntimeState {
     pub context: v8::Global<v8::Context>,
-    pub pending_ops: FuturesUnordered<Async>,
+    pub pending_ops: Rc<RefCell<FuturesUnordered<Async>>>,
     pub sender: Sender<usize>,
     pub receiver: Receiver<usize>,
+    pub isolate: Arc<Mutex<OwnedIsolate>>,
+    pub resolvers: Rc<RefCell<Vec<v8::Global<PromiseResolver>>>>,
 }
+
+#[derive(Debug)]
+pub struct RuntimeTask {
+}
+
 /**
 # Ts Runtime
 */
 pub struct Runtime {
-    pub isolate: v8::OwnedIsolate,
+    pub isolate: Arc<Mutex<v8::OwnedIsolate>>,
     pub sender: Sender<usize>,
 }
 
@@ -64,9 +79,13 @@ impl Runtime {
         (isolate, global_context)
     }
     pub fn from(graph: DependencyGraph) -> Self {
-        let (mut isolate, global_context) = Self::isolate();
+        let (isolate, global_context) = Self::isolate();
 
         let (sender, receiver) = mpsc::channel::<usize>(1024);
+
+        let iso = Arc::new(Mutex::new(isolate));
+        let mut binding = iso.lock().unwrap();
+        let isolate = binding.as_mut();
 
         isolate.set_data(
             constants::ASYNC_STATE_SLOT,
@@ -74,7 +93,9 @@ impl Runtime {
                 context: global_context,
                 sender: sender.clone(),
                 receiver,
-                pending_ops: FuturesUnordered::new(),
+                resolvers: Rc::new(RefCell::new(vec![])),
+                isolate: iso.clone(),
+                pending_ops: Rc::new(RefCell::new(FuturesUnordered::new())),
             }))) as *mut c_void,
         );
 
@@ -87,7 +108,16 @@ impl Runtime {
             }))) as *mut c_void,
         );
 
-        Self { isolate, sender }
+        // isolate.set_data(
+        //     constants::ASYNC_TASK_SLOT,
+        //     Rc::into_raw(Rc::new(RefCell::new(RuntimeTask {
+        //     }))) as *mut c_void,
+        // );
+
+        Self {
+            isolate: iso.clone(),
+            sender,
+        }
     }
 
     pub fn state(isolate: &Isolate) -> Rc<RefCell<RuntimeState>> {
@@ -110,8 +140,17 @@ impl Runtime {
         state
     }
 
+    // pub fn task(isolate: &isolate) -> rc<refcell<runtimetask>> {
+    //     let task_ptr = isolate.get_data(constants::async_task_slot) as *const refcell<runtimetask>;
+
+    //     let task_rc = unsafe { rc::from_raw(task_ptr) };
+    //     let task = task_rc.clone();
+    //     rc::into_raw(task_rc);
+    //     task
+    // }
     fn bootstrap(&mut self, entry: &String) -> anyhow::Result<()> {
-        let isolate = self.isolate.as_mut();
+        let mut binding = self.isolate.lock().unwrap();
+        let isolate = binding.as_mut();
         let state_rc = Self::state(isolate);
         let graph_rc = Self::graph(isolate);
 
@@ -146,11 +185,11 @@ impl Runtime {
         let tc_scope = &mut v8::TryCatch::new(scope);
 
         let this = v8::Object::new(tc_scope);
-        let timer = v8::Object::new(tc_scope);
+        // let timer = v8::Object::new(tc_scope);
 
-        Self::set_func(tc_scope, timer, "send", Self::timer_send);
-        Self::set_obj(tc_scope, this, "timer", timer);
-
+        // Self::set_func(tc_scope, timer, "send", Self::timer_send);
+        // Self::set_obj(tc_scope, this, "timer", timer);
+        drop(state);
         let entry = v8::String::new(tc_scope, &entry).unwrap();
         fun.call(tc_scope, this.into(), &[entry.into()]);
         Ok(())
@@ -159,29 +198,33 @@ impl Runtime {
     pub async fn run(&mut self, entry: &String) -> anyhow::Result<()> {
         self.bootstrap(entry)?;
 
-        let isolate = self.isolate.as_mut();
+        let mut binding = self.isolate.lock().unwrap();
+        let isolate = binding.as_mut();
         let state_rc = Self::state(isolate);
 
         loop {
             if {
                 let state = state_rc.borrow();
-                state.pending_ops.is_empty()
+                let pending_ops = state.pending_ops.borrow();
+                pending_ops.is_empty()
             } {
                 break Ok(());
             }
             poll_fn(|cx| loop {
-                let result = {
-                    let mut state = state_rc.borrow_mut();
-                    let result = state.pending_ops.poll_next_unpin(cx);
-                    if Poll::Pending == result {
-                        continue;
-                    }
-                    result
-                };
-                if let Poll::Ready(Some(Poll::Ready(op))) = result {
-                    match op.exec(isolate) {
-                        Ok(v) => break v,
-                        Err(err) => eprintln!("{err:?}"),
+                let state = state_rc.borrow_mut();
+                let mut pending_ops = state.pending_ops.borrow_mut();
+                // let mut task = pending_ops.take(1);
+                // let task = pending_ops.take();
+                let result = pending_ops.poll_next_unpin(cx);
+
+                // let result = task.poll_next_unpin(cx);
+
+                if let Poll::Pending = result {
+                    continue;
+                }
+                if let Poll::Ready(Some(op)) = result {
+                    if let Err(err) = op {
+                        eprintln!("{}", err);
                     }
                     break Poll::Ready(());
                 }
